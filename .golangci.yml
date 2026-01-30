@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  default: standard
+  enable:
+    - gocritic      # Bugs, performance and style issues
+    - misspell      # Finds commonly misspelled English words
+    - unconvert     # Unnecessary type conversions
+    - unparam       # Unused function parameters
+    - nakedret      # Naked returns in long functions
+    - prealloc      # Preallocate slice capacity
+    - gosec         # Security problems
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters:
+          - errcheck
+          - gocritic
+          - gosec
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - whyNoLint
+  nakedret:
+    max-func-lines: 30
+  misspell:
+    locale: US
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

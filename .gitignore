@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Runtime data
+data/*.db
+data/storage/
+
+# Test artifacts
+*.log
+cookies.txt
+
+# Environment
+.env
+.env.local

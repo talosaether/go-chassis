@@ -1,0 +1,33 @@
+chassis:
+  env: development
+  log_level: info
+
+storage:
+  provider: local
+  base_path: ./app-data
+
+users:
+  db_path: ./data/users.db
+
+auth:
+  db_path: ./data/sessions.db
+  cookie_name: session
+  session_ttl: 24h
+  secure_cookie: false
+
+orgs:
+  db_path: ./data/orgs.db
+
+cache:
+  default_ttl: 5m
+
+queue:
+  db_path: ./data/queue.db
+
+email:
+  smtp_host: localhost
+  smtp_port: 25
+  from: noreply@example.com
+
+# Example of environment variable substitution:
+# secret_key: ${SECRET_KEY:-default-dev-key}
