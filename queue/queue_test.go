@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -200,6 +201,163 @@ func TestSQLiteStore_GetAllEmpty(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_GetAllPaginated(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create 10 jobs
+	for i := 0; i < 10; i++ {
+		store.Create(ctx, &Job{ID: fmt.Sprintf("job%d", i), Type: "task", Status: StatusPending})
+	}
+
+	// Get first page (5 items)
+	page1, err := store.GetAllPaginated(ctx, 0, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated failed: %v", err)
+	}
+	if len(page1) != 5 {
+		t.Errorf("expected 5 jobs on page 1, got %d", len(page1))
+	}
+
+	// Get second page (5 items)
+	page2, err := store.GetAllPaginated(ctx, 5, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated page 2 failed: %v", err)
+	}
+	if len(page2) != 5 {
+		t.Errorf("expected 5 jobs on page 2, got %d", len(page2))
+	}
+
+	// Ensure pages have different jobs
+	if page1[0].ID == page2[0].ID {
+		t.Error("page 1 and page 2 should have different jobs")
+	}
+
+	// Get third page (should be empty)
+	page3, err := store.GetAllPaginated(ctx, 10, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated page 3 failed: %v", err)
+	}
+	if len(page3) != 0 {
+		t.Errorf("expected 0 jobs on page 3, got %d", len(page3))
+	}
+}
+
+func TestSQLiteStore_GetByStatusPaginated(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Create 6 pending and 4 completed jobs
+	for i := 0; i < 6; i++ {
+		store.Create(ctx, &Job{ID: fmt.Sprintf("pending%d", i), Type: "task", Status: StatusPending})
+	}
+	for i := 0; i < 4; i++ {
+		store.Create(ctx, &Job{ID: fmt.Sprintf("completed%d", i), Type: "task", Status: StatusCompleted})
+	}
+
+	// Get first page of pending (3 items)
+	pending1, err := store.GetByStatusPaginated(ctx, StatusPending, 0, 3)
+	if err != nil {
+		t.Fatalf("GetByStatusPaginated failed: %v", err)
+	}
+	if len(pending1) != 3 {
+		t.Errorf("expected 3 pending jobs, got %d", len(pending1))
+	}
+
+	// Verify all are pending
+	for _, job := range pending1 {
+		if job.Status != StatusPending {
+			t.Errorf("expected pending status, got %s", job.Status)
+		}
+	}
+
+	// Get second page of pending
+	pending2, err := store.GetByStatusPaginated(ctx, StatusPending, 3, 3)
+	if err != nil {
+		t.Fatalf("GetByStatusPaginated page 2 failed: %v", err)
+	}
+	if len(pending2) != 3 {
+		t.Errorf("expected 3 pending jobs on page 2, got %d", len(pending2))
+	}
+
+	// Get completed jobs
+	completed, err := store.GetByStatusPaginated(ctx, StatusCompleted, 0, 10)
+	if err != nil {
+		t.Fatalf("GetByStatusPaginated completed failed: %v", err)
+	}
+	if len(completed) != 4 {
+		t.Errorf("expected 4 completed jobs, got %d", len(completed))
+	}
+}
+
+func TestSQLiteStore_CountAll(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Empty count
+	count, err := store.CountAll(ctx)
+	if err != nil {
+		t.Fatalf("CountAll failed: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	// Add jobs
+	store.Create(ctx, &Job{ID: "job1", Type: "task", Status: StatusPending})
+	store.Create(ctx, &Job{ID: "job2", Type: "task", Status: StatusCompleted})
+	store.Create(ctx, &Job{ID: "job3", Type: "task", Status: StatusPending})
+
+	count, err = store.CountAll(ctx)
+	if err != nil {
+		t.Fatalf("CountAll failed: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3, got %d", count)
+	}
+}
+
+func TestSQLiteStore_CountByStatus(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	store.Create(ctx, &Job{ID: "job1", Type: "task", Status: StatusPending})
+	store.Create(ctx, &Job{ID: "job2", Type: "task", Status: StatusPending})
+	store.Create(ctx, &Job{ID: "job3", Type: "task", Status: StatusCompleted})
+
+	pendingCount, err := store.CountByStatus(ctx, StatusPending)
+	if err != nil {
+		t.Fatalf("CountByStatus pending failed: %v", err)
+	}
+	if pendingCount != 2 {
+		t.Errorf("expected 2 pending, got %d", pendingCount)
+	}
+
+	completedCount, err := store.CountByStatus(ctx, StatusCompleted)
+	if err != nil {
+		t.Fatalf("CountByStatus completed failed: %v", err)
+	}
+	if completedCount != 1 {
+		t.Errorf("expected 1 completed, got %d", completedCount)
+	}
+
+	failedCount, err := store.CountByStatus(ctx, StatusFailed)
+	if err != nil {
+		t.Fatalf("CountByStatus failed failed: %v", err)
+	}
+	if failedCount != 0 {
+		t.Errorf("expected 0 failed, got %d", failedCount)
+	}
+}
+
 func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -333,6 +491,145 @@ func TestModule_GetByIDNotFound(t *testing.T) {
 	}
 	if !errors.Is(err, ErrJobNotFound) {
 		t.Errorf("expected ErrJobNotFound, got: %v", err)
+	}
+}
+
+func TestModule_GetAllPaginated(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	// Create 15 jobs
+	for i := 0; i < 15; i++ {
+		mod.Enqueue(ctx, fmt.Sprintf("type%d", i), nil)
+	}
+
+	// Get first page
+	result, err := mod.GetAllPaginated(ctx, 1, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated failed: %v", err)
+	}
+
+	if len(result.Jobs) != 5 {
+		t.Errorf("expected 5 jobs, got %d", len(result.Jobs))
+	}
+	if result.Page != 1 {
+		t.Errorf("expected page 1, got %d", result.Page)
+	}
+	if result.Limit != 5 {
+		t.Errorf("expected limit 5, got %d", result.Limit)
+	}
+	if result.Total != 15 {
+		t.Errorf("expected total 15, got %d", result.Total)
+	}
+	if result.TotalPages != 3 {
+		t.Errorf("expected 3 total pages, got %d", result.TotalPages)
+	}
+
+	// Get second page
+	result2, err := mod.GetAllPaginated(ctx, 2, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated page 2 failed: %v", err)
+	}
+	if len(result2.Jobs) != 5 {
+		t.Errorf("expected 5 jobs on page 2, got %d", len(result2.Jobs))
+	}
+	if result2.Page != 2 {
+		t.Errorf("expected page 2, got %d", result2.Page)
+	}
+
+	// Get third page (partial)
+	result3, err := mod.GetAllPaginated(ctx, 3, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated page 3 failed: %v", err)
+	}
+	if len(result3.Jobs) != 5 {
+		t.Errorf("expected 5 jobs on page 3, got %d", len(result3.Jobs))
+	}
+
+	// Get fourth page (empty)
+	result4, err := mod.GetAllPaginated(ctx, 4, 5)
+	if err != nil {
+		t.Fatalf("GetAllPaginated page 4 failed: %v", err)
+	}
+	if len(result4.Jobs) != 0 {
+		t.Errorf("expected 0 jobs on page 4, got %d", len(result4.Jobs))
+	}
+}
+
+func TestModule_GetAllPaginated_DefaultValues(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	mod.Enqueue(ctx, "task", nil)
+
+	// Test with invalid page (should default to 1)
+	result, err := mod.GetAllPaginated(ctx, 0, 10)
+	if err != nil {
+		t.Fatalf("GetAllPaginated failed: %v", err)
+	}
+	if result.Page != 1 {
+		t.Errorf("expected page 1 for invalid input, got %d", result.Page)
+	}
+
+	// Test with invalid limit (should default to 20)
+	result2, err := mod.GetAllPaginated(ctx, 1, 0)
+	if err != nil {
+		t.Fatalf("GetAllPaginated failed: %v", err)
+	}
+	if result2.Limit != 20 {
+		t.Errorf("expected limit 20 for invalid input, got %d", result2.Limit)
+	}
+}
+
+func TestModule_GetByStatusPaginated(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	// Create 8 pending jobs
+	for i := 0; i < 8; i++ {
+		mod.Enqueue(ctx, "pending-task", nil)
+	}
+
+	// Complete 3 of them
+	for i := 0; i < 3; i++ {
+		job, _ := mod.Dequeue(ctx)
+		mod.Complete(ctx, job.(*Job).ID)
+	}
+
+	// Get pending jobs paginated
+	pendingResult, err := mod.GetByStatusPaginated(ctx, StatusPending, 1, 3)
+	if err != nil {
+		t.Fatalf("GetByStatusPaginated failed: %v", err)
+	}
+	if len(pendingResult.Jobs) != 3 {
+		t.Errorf("expected 3 pending jobs, got %d", len(pendingResult.Jobs))
+	}
+	if pendingResult.Total != 5 {
+		t.Errorf("expected 5 total pending, got %d", pendingResult.Total)
+	}
+	if pendingResult.TotalPages != 2 {
+		t.Errorf("expected 2 total pages, got %d", pendingResult.TotalPages)
+	}
+
+	// Get completed jobs paginated
+	completedResult, err := mod.GetByStatusPaginated(ctx, StatusCompleted, 1, 10)
+	if err != nil {
+		t.Fatalf("GetByStatusPaginated completed failed: %v", err)
+	}
+	if len(completedResult.Jobs) != 3 {
+		t.Errorf("expected 3 completed jobs, got %d", len(completedResult.Jobs))
+	}
+	if completedResult.Total != 3 {
+		t.Errorf("expected 3 total completed, got %d", completedResult.Total)
 	}
 }
 

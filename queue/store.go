@@ -18,6 +18,10 @@ type Store interface {
 	GetByID(ctx context.Context, id string) (*Job, error)
 	GetAll(ctx context.Context) ([]*Job, error)
 	GetByStatus(ctx context.Context, status JobStatus) ([]*Job, error)
+	GetAllPaginated(ctx context.Context, offset, limit int) ([]*Job, error)
+	GetByStatusPaginated(ctx context.Context, status JobStatus, offset, limit int) ([]*Job, error)
+	CountAll(ctx context.Context) (int, error)
+	CountByStatus(ctx context.Context, status JobStatus) (int, error)
 	Dequeue(ctx context.Context) (*Job, error)
 	DequeueByType(ctx context.Context, jobType string) (*Job, error)
 	UpdateStatus(ctx context.Context, id string, status JobStatus, errMsg string, processedAt *time.Time) error
@@ -122,6 +126,56 @@ func (store *SQLiteStore) GetByStatus(ctx context.Context, status JobStatus) ([]
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
+}
+
+func (store *SQLiteStore) GetAllPaginated(ctx context.Context, offset, limit int) ([]*Job, error) {
+	query := `SELECT id, type, payload, status, error, created_at, processed_at FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := store.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	jobs := make([]*Job, 0)
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func (store *SQLiteStore) GetByStatusPaginated(ctx context.Context, status JobStatus, offset, limit int) ([]*Job, error) {
+	query := `SELECT id, type, payload, status, error, created_at, processed_at FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	rows, err := store.db.QueryContext(ctx, query, status, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	jobs := make([]*Job, 0)
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
+}
+
+func (store *SQLiteStore) CountAll(ctx context.Context) (int, error) {
+	var count int
+	err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs`).Scan(&count)
+	return count, err
+}
+
+func (store *SQLiteStore) CountByStatus(ctx context.Context, status JobStatus) (int, error) {
+	var count int
+	err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE status = ?`, status).Scan(&count)
+	return count, err
 }
 
 func (store *SQLiteStore) Dequeue(ctx context.Context) (*Job, error) {

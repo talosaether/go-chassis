@@ -239,6 +239,83 @@ func (mod *Module) GetFailed(ctx context.Context) (any, error) {
 	return mod.store.GetByStatus(ctx, StatusFailed)
 }
 
+// PaginatedResult contains jobs and pagination metadata.
+type PaginatedResult struct {
+	Jobs       []*Job `json:"jobs"`
+	Page       int    `json:"page"`
+	Limit      int    `json:"limit"`
+	Total      int    `json:"total"`
+	TotalPages int    `json:"totalPages"`
+}
+
+// GetAllPaginated retrieves jobs with pagination.
+func (mod *Module) GetAllPaginated(ctx context.Context, page, limit int) (*PaginatedResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	jobs, err := mod.store.GetAllPaginated(ctx, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := mod.store.CountAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &PaginatedResult{
+		Jobs:       jobs,
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// GetByStatusPaginated retrieves jobs by status with pagination.
+func (mod *Module) GetByStatusPaginated(ctx context.Context, status JobStatus, page, limit int) (*PaginatedResult, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	jobs, err := mod.store.GetByStatusPaginated(ctx, status, offset, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	total, err := mod.store.CountByStatus(ctx, status)
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := (total + limit - 1) / limit
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	return &PaginatedResult{
+		Jobs:       jobs,
+		Page:       page,
+		Limit:      limit,
+		Total:      total,
+		TotalPages: totalPages,
+	}, nil
+}
+
 // Retry moves a failed job back to pending status.
 func (mod *Module) Retry(ctx context.Context, jobID string) error {
 	return mod.store.UpdateStatus(ctx, jobID, StatusPending, "", nil)

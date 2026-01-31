@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -357,41 +358,69 @@ func main() {
 	// Queue endpoints
 	http.HandleFunc("/jobs", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodGet {
-			// Filter by status: pending, completed, processing, failed, or all (default)
+			// Parse pagination params
+			page := 1
+			limit := 20
+			if p := request.URL.Query().Get("page"); p != "" {
+				if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
+					page = parsed
+				}
+			}
+			if l := request.URL.Query().Get("limit"); l != "" {
+				if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+					limit = parsed
+				}
+			}
+
+			// Filter by status: pending, completed, or all (default)
 			statusFilter := request.URL.Query().Get("status")
 
-			var jobsResult any
+			var result *queue.PaginatedResult
 			var err error
 
 			switch statusFilter {
 			case "pending":
-				jobsResult, err = queueMod.GetPending(request.Context())
+				result, err = queueMod.GetByStatusPaginated(request.Context(), queue.StatusPending, page, limit)
 			case "completed":
-				jobsResult, err = queueMod.GetCompleted(request.Context())
+				result, err = queueMod.GetByStatusPaginated(request.Context(), queue.StatusCompleted, page, limit)
 			default:
 				// "all" or empty returns all jobs
-				jobsResult, err = queueMod.GetAll(request.Context())
+				result, err = queueMod.GetAllPaginated(request.Context(), page, limit)
 			}
 
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			jobs := jobsResult.([]*queue.Job)
 
 			type jobResponse struct {
 				ID     string `json:"id"`
 				Type   string `json:"type"`
 				Status string `json:"status"`
 			}
-			response := make([]jobResponse, 0, len(jobs))
-			for _, job := range jobs {
-				response = append(response, jobResponse{
+			type paginatedResponse struct {
+				Jobs       []jobResponse `json:"jobs"`
+				Pagination struct {
+					Page       int `json:"page"`
+					Limit      int `json:"limit"`
+					Total      int `json:"total"`
+					TotalPages int `json:"totalPages"`
+				} `json:"pagination"`
+			}
+
+			response := paginatedResponse{}
+			response.Jobs = make([]jobResponse, 0, len(result.Jobs))
+			for _, job := range result.Jobs {
+				response.Jobs = append(response.Jobs, jobResponse{
 					ID:     job.ID,
 					Type:   job.Type,
 					Status: string(job.Status),
 				})
 			}
+			response.Pagination.Page = result.Page
+			response.Pagination.Limit = result.Limit
+			response.Pagination.Total = result.Total
+			response.Pagination.TotalPages = result.TotalPages
 
 			writer.Header().Set("Content-Type", "application/json")
 			if err := json.NewEncoder(writer).Encode(response); err != nil {
