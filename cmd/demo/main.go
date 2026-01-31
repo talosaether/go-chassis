@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -218,14 +219,29 @@ func main() {
 				return
 			}
 			memberships := membershipsResult.([]*orgs.Membership)
-			write(writer, "Your organizations:\n")
+
+			type orgResponse struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+				Role string `json:"role"`
+			}
+			var response []orgResponse
 			for _, membership := range memberships {
 				orgResult, err := orgsMod.GetByID(request.Context(), membership.OrgID)
 				if err != nil {
 					continue
 				}
 				org := orgResult.(*orgs.Org)
-				write(writer, "  - %s (ID: %s, Role: %s)\n", org.Name, org.ID(), membership.Role)
+				response = append(response, orgResponse{
+					ID:   org.ID(),
+					Name: org.Name,
+					Role: membership.Role,
+				})
+			}
+
+			writer.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(writer).Encode(response); err != nil {
+				log.Printf("json encode error: %v", err)
 			}
 			return
 		}
@@ -281,9 +297,21 @@ func main() {
 		}
 		members := membersResult.([]*orgs.Membership)
 
-		write(writer, "Members of org %s:\n", orgID)
+		type memberResponse struct {
+			UserID string `json:"userId"`
+			Role   string `json:"role"`
+		}
+		var response []memberResponse
 		for _, member := range members {
-			write(writer, "  - User %s (Role: %s)\n", member.UserID, member.Role)
+			response = append(response, memberResponse{
+				UserID: member.UserID,
+				Role:   member.Role,
+			})
+		}
+
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(response); err != nil {
+			log.Printf("json encode error: %v", err)
 		}
 	})))
 
