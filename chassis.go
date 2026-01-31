@@ -93,6 +93,11 @@ type QueueModule interface {
 	Dequeue(ctx context.Context) (any, error)
 	Complete(ctx context.Context, jobID string) error
 	Fail(ctx context.Context, jobID string, err error) error
+	GetByID(ctx context.Context, jobID string) (any, error)
+	GetAll(ctx context.Context) (any, error)
+	GetPending(ctx context.Context) (any, error)
+	GetCompleted(ctx context.Context) (any, error)
+	GetFailed(ctx context.Context) (any, error)
 }
 
 // EmailModule is the interface exposed by the email module.

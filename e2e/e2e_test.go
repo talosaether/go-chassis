@@ -783,6 +783,111 @@ func TestMultipleOrgsPerUser(t *testing.T) {
 	}
 }
 
+// TestQueueJobFiltering tests job filtering by status and single job lookup.
+func TestQueueJobFiltering(t *testing.T) {
+	app, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Enqueue multiple jobs
+	job1Result, _ := app.Queue().Enqueue(ctx, "email", map[string]string{"to": "a@example.com"})
+	job1 := job1Result.(*queue.Job)
+
+	job2Result, _ := app.Queue().Enqueue(ctx, "email", map[string]string{"to": "b@example.com"})
+	job2 := job2Result.(*queue.Job)
+
+	job3Result, _ := app.Queue().Enqueue(ctx, "sms", map[string]string{"to": "555-1234"})
+	job3 := job3Result.(*queue.Job)
+
+	// Test GetAll - should return all 3 pending jobs
+	allResult, err := app.Queue().GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+	all := allResult.([]*queue.Job)
+	if len(all) != 3 {
+		t.Errorf("GetAll: expected 3 jobs, got %d", len(all))
+	}
+
+	// Test GetPending - should return all 3
+	pendingResult, err := app.Queue().GetPending(ctx)
+	if err != nil {
+		t.Fatalf("GetPending failed: %v", err)
+	}
+	pending := pendingResult.([]*queue.Job)
+	if len(pending) != 3 {
+		t.Errorf("GetPending: expected 3 jobs, got %d", len(pending))
+	}
+
+	// Complete job1
+	app.Queue().Dequeue(ctx) // Claims job1 (oldest)
+	app.Queue().Complete(ctx, job1.ID)
+
+	// Test GetCompleted - should return 1
+	completedResult, err := app.Queue().GetCompleted(ctx)
+	if err != nil {
+		t.Fatalf("GetCompleted failed: %v", err)
+	}
+	completed := completedResult.([]*queue.Job)
+	if len(completed) != 1 {
+		t.Errorf("GetCompleted: expected 1 job, got %d", len(completed))
+	}
+	if completed[0].ID != job1.ID {
+		t.Errorf("GetCompleted: expected job1, got %s", completed[0].ID)
+	}
+
+	// Test GetPending after completion - should return 2
+	pendingResult, _ = app.Queue().GetPending(ctx)
+	pending = pendingResult.([]*queue.Job)
+	if len(pending) != 2 {
+		t.Errorf("GetPending after complete: expected 2 jobs, got %d", len(pending))
+	}
+
+	// Test GetAll after completion - should still return 3
+	allResult, _ = app.Queue().GetAll(ctx)
+	all = allResult.([]*queue.Job)
+	if len(all) != 3 {
+		t.Errorf("GetAll after complete: expected 3 jobs, got %d", len(all))
+	}
+
+	// Test GetByID - existing job
+	gotResult, err := app.Queue().GetByID(ctx, job2.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	got := gotResult.(*queue.Job)
+	if got.ID != job2.ID {
+		t.Errorf("GetByID: expected %s, got %s", job2.ID, got.ID)
+	}
+	if got.Type != "email" {
+		t.Errorf("GetByID: expected type email, got %s", got.Type)
+	}
+
+	// Test GetByID - completed job should still be retrievable
+	completedJobResult, err := app.Queue().GetByID(ctx, job1.ID)
+	if err != nil {
+		t.Fatalf("GetByID (completed) failed: %v", err)
+	}
+	completedJob := completedJobResult.(*queue.Job)
+	if completedJob.Status != queue.StatusCompleted {
+		t.Errorf("GetByID: expected completed status, got %s", completedJob.Status)
+	}
+
+	// Test GetByID - non-existent job
+	_, err = app.Queue().GetByID(ctx, "nonexistent-job-id")
+	if err == nil {
+		t.Error("GetByID should return error for non-existent job")
+	}
+
+	// Verify job3 is still pending
+	job3Result2, _ := app.Queue().GetByID(ctx, job3.ID)
+	job3Got := job3Result2.(*queue.Job)
+	if job3Got.Status != queue.StatusPending {
+		t.Errorf("job3 should still be pending, got %s", job3Got.Status)
+	}
+}
+
 // TestQueueWorkerPattern demonstrates the worker pattern (without actually running a worker).
 func TestQueueWorkerPattern(t *testing.T) {
 	app, cleanup := setupTestApp(t)
