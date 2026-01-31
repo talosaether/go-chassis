@@ -436,6 +436,49 @@ func main() {
 		http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
+	// Single job endpoint: GET /jobs/{id}
+	http.HandleFunc("/jobs/", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet {
+			http.Error(writer, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Extract job ID from path: /jobs/{id}
+		jobID := request.URL.Path[len("/jobs/"):]
+		if jobID == "" {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(writer).Encode(map[string]string{"error": "Job ID required"})
+			return
+		}
+
+		jobResult, err := queueMod.GetByID(request.Context(), jobID)
+		if err != nil {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(writer).Encode(map[string]string{"error": "Job not found"})
+			return
+		}
+
+		job := jobResult.(*queue.Job)
+
+		type jobResponse struct {
+			ID     string `json:"id"`
+			Type   string `json:"type"`
+			Status string `json:"status"`
+		}
+		response := jobResponse{
+			ID:     job.ID,
+			Type:   job.Type,
+			Status: string(job.Status),
+		}
+
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(response); err != nil {
+			log.Printf("json encode error: %v", err)
+		}
+	})
+
 	// Email endpoint
 	http.HandleFunc("/email", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost {

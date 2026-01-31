@@ -288,6 +288,54 @@ func TestModuleNew_WithStore(t *testing.T) {
 	}
 }
 
+func TestModule_GetByID(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	// Enqueue a job
+	jobResult, err := mod.Enqueue(ctx, "test-type", map[string]string{"data": "value"})
+	if err != nil {
+		t.Fatalf("Enqueue failed: %v", err)
+	}
+	job := jobResult.(*Job)
+
+	// Get by ID
+	gotResult, err := mod.GetByID(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+
+	got := gotResult.(*Job)
+	if got.ID != job.ID {
+		t.Errorf("ID mismatch: got %q, want %q", got.ID, job.ID)
+	}
+	if got.Type != "test-type" {
+		t.Errorf("Type mismatch: got %q, want %q", got.Type, "test-type")
+	}
+	if got.Status != StatusPending {
+		t.Errorf("Status mismatch: got %q, want %q", got.Status, StatusPending)
+	}
+}
+
+func TestModule_GetByIDNotFound(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	_, err := mod.GetByID(ctx, "nonexistent-id")
+	if err == nil {
+		t.Error("GetByID should return error for nonexistent job")
+	}
+	if !errors.Is(err, ErrJobNotFound) {
+		t.Errorf("expected ErrJobNotFound, got: %v", err)
+	}
+}
+
 func TestModule_EnqueueAndDequeue(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
