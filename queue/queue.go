@@ -219,9 +219,19 @@ func (mod *Module) GetByID(ctx context.Context, jobID string) (any, error) {
 	return mod.store.GetByID(ctx, jobID)
 }
 
+// GetAll retrieves all jobs regardless of status.
+func (mod *Module) GetAll(ctx context.Context) (any, error) {
+	return mod.store.GetAll(ctx)
+}
+
 // GetPending retrieves all pending jobs.
 func (mod *Module) GetPending(ctx context.Context) (any, error) {
 	return mod.store.GetByStatus(ctx, StatusPending)
+}
+
+// GetCompleted retrieves all completed jobs.
+func (mod *Module) GetCompleted(ctx context.Context) (any, error) {
+	return mod.store.GetByStatus(ctx, StatusCompleted)
 }
 
 // GetFailed retrieves all failed jobs.

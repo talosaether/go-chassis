@@ -16,6 +16,7 @@ import (
 type Store interface {
 	Create(ctx context.Context, job *Job) error
 	GetByID(ctx context.Context, id string) (*Job, error)
+	GetAll(ctx context.Context) ([]*Job, error)
 	GetByStatus(ctx context.Context, status JobStatus) ([]*Job, error)
 	Dequeue(ctx context.Context) (*Job, error)
 	DequeueByType(ctx context.Context, jobType string) (*Job, error)
@@ -83,6 +84,25 @@ func (store *SQLiteStore) GetByID(ctx context.Context, id string) (*Job, error) 
 		return nil, err
 	}
 	return job, nil
+}
+
+func (store *SQLiteStore) GetAll(ctx context.Context) ([]*Job, error) {
+	query := `SELECT id, type, payload, status, error, created_at, processed_at FROM jobs ORDER BY created_at ASC`
+	rows, err := store.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	jobs := make([]*Job, 0)
+	for rows.Next() {
+		job, err := scanJobRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, rows.Err()
 }
 
 func (store *SQLiteStore) GetByStatus(ctx context.Context, status JobStatus) ([]*Job, error) {

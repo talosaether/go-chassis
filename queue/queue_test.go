@@ -160,6 +160,46 @@ func TestSQLiteStore_GetByStatus(t *testing.T) {
 	}
 }
 
+func TestSQLiteStore_GetAll(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	store.Create(ctx, &Job{ID: "job1", Type: "task", Status: StatusPending})
+	store.Create(ctx, &Job{ID: "job2", Type: "task", Status: StatusProcessing})
+	store.Create(ctx, &Job{ID: "job3", Type: "task", Status: StatusCompleted})
+	store.Create(ctx, &Job{ID: "job4", Type: "task", Status: StatusFailed})
+
+	all, err := store.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+
+	if len(all) != 4 {
+		t.Errorf("expected 4 jobs, got %d", len(all))
+	}
+}
+
+func TestSQLiteStore_GetAllEmpty(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	all, err := store.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+
+	if all == nil {
+		t.Error("GetAll should return empty slice, not nil")
+	}
+	if len(all) != 0 {
+		t.Errorf("expected 0 jobs, got %d", len(all))
+	}
+}
+
 func TestSQLiteStore_UpdateStatus(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -377,6 +417,32 @@ func TestModule_Retry(t *testing.T) {
 	}
 }
 
+func TestModule_GetAll(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	// Create jobs with different statuses
+	job1, _ := mod.Enqueue(ctx, "task1", nil)
+	mod.Enqueue(ctx, "task2", nil)
+
+	// Complete one job
+	mod.Dequeue(ctx)
+	mod.Complete(ctx, job1.(*Job).ID)
+
+	allResult, err := mod.GetAll(ctx)
+	if err != nil {
+		t.Fatalf("GetAll failed: %v", err)
+	}
+
+	all := allResult.([]*Job)
+	if len(all) != 2 {
+		t.Errorf("expected 2 jobs, got %d", len(all))
+	}
+}
+
 func TestModule_GetPending(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -395,6 +461,34 @@ func TestModule_GetPending(t *testing.T) {
 	pending := pendingResult.([]*Job)
 	if len(pending) != 2 {
 		t.Errorf("expected 2 pending jobs, got %d", len(pending))
+	}
+}
+
+func TestModule_GetCompleted(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	mod := New(WithStore(store))
+	ctx := context.Background()
+
+	// Create and complete a job
+	job1, _ := mod.Enqueue(ctx, "task1", nil)
+	mod.Enqueue(ctx, "task2", nil) // stays pending
+
+	mod.Dequeue(ctx)
+	mod.Complete(ctx, job1.(*Job).ID)
+
+	completedResult, err := mod.GetCompleted(ctx)
+	if err != nil {
+		t.Fatalf("GetCompleted failed: %v", err)
+	}
+
+	completed := completedResult.([]*Job)
+	if len(completed) != 1 {
+		t.Errorf("expected 1 completed job, got %d", len(completed))
+	}
+	if completed[0].Status != StatusCompleted {
+		t.Errorf("expected completed status, got %q", completed[0].Status)
 	}
 }
 

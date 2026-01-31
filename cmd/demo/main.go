@@ -357,16 +357,45 @@ func main() {
 	// Queue endpoints
 	http.HandleFunc("/jobs", func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method == http.MethodGet {
-			jobsResult, err := queueMod.GetPending(request.Context())
+			// Filter by status: pending, completed, processing, failed, or all (default)
+			statusFilter := request.URL.Query().Get("status")
+
+			var jobsResult any
+			var err error
+
+			switch statusFilter {
+			case "pending":
+				jobsResult, err = queueMod.GetPending(request.Context())
+			case "completed":
+				jobsResult, err = queueMod.GetCompleted(request.Context())
+			default:
+				// "all" or empty returns all jobs
+				jobsResult, err = queueMod.GetAll(request.Context())
+			}
+
 			if err != nil {
 				http.Error(writer, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			jobs := jobsResult.([]*queue.Job)
 
-			write(writer, "Pending jobs: %d\n", len(jobs))
+			type jobResponse struct {
+				ID     string `json:"id"`
+				Type   string `json:"type"`
+				Status string `json:"status"`
+			}
+			response := make([]jobResponse, 0, len(jobs))
 			for _, job := range jobs {
-				write(writer, "  - %s (type: %s)\n", job.ID, job.Type)
+				response = append(response, jobResponse{
+					ID:     job.ID,
+					Type:   job.Type,
+					Status: string(job.Status),
+				})
+			}
+
+			writer.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(writer).Encode(response); err != nil {
+				log.Printf("json encode error: %v", err)
 			}
 			return
 		}
@@ -386,7 +415,21 @@ func main() {
 			}
 			job := jobResult.(*queue.Job)
 
-			write(writer, "Enqueued job: %s (type: %s)\n", job.ID, job.Type)
+			type jobResponse struct {
+				ID     string `json:"id"`
+				Type   string `json:"type"`
+				Status string `json:"status"`
+			}
+			response := jobResponse{
+				ID:     job.ID,
+				Type:   job.Type,
+				Status: string(job.Status),
+			}
+
+			writer.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(writer).Encode(response); err != nil {
+				log.Printf("json encode error: %v", err)
+			}
 			return
 		}
 
